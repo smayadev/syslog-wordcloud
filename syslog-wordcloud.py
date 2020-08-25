@@ -4,58 +4,69 @@ import matplotlib.pyplot as plt
 
 words = {}
 
-# exclude the date from a syslog line and just get the rest
-excl_date_regex = r"^[A-Za-z]{3} [0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (.*)"
+# I'm breaking these regezes in pieces to make debugging easier, instead of
+# defining multiple capture groups for the entire syslog line at once
+date_regex = r"^(^[\s\d\w]+\s+\d+:\d+:\d+)"
 
-# extract the username from a syslog line where the date has been filtered out
-extract_username_regex = r"^([a-zA-Z0-9._-]+)\s+.*"
+username_regex = r"^.*\d+:\d+:\d+\s+(\S+)\s+"
 
-extract_prog_regex = r"^[a-zA-Z0-9._-]+\s+([a-zA-Z0-9._-]+)\(?([a-z=]+)?\)?(\[\d+\])?\]?\:"
+program_regex = r"^.*\d+:\d+:\d+\s+\S+\s+([\w\./-]+)"
+
+pid_regex = r"[\w\./-]+\[(\d+)\]:"
+
+message_regex = r"^.*\d+:\d+:\d+\s+\S+\s+[\w\./-]+\[?\d*\]?\(?[a-zA-Z0-9=]*\)?:\s+(.*)"
 
 file = open('/var/log/syslog', 'r')
-
-no_date = ''
 
 # read line by line in case the file is large
 for line in file:
 
     line = file.readline().strip()
 
+    # deal with the blank line at the end
+    if not line:
+        continue
+
+    username_search = re.search(username_regex, line)
+    username = username_search.group(1)
+
+    program_search = re.search(program_regex, line)
+    program = program_search.group(1)
+
     try:
-        # filter out date and just get the rest
-        date_search = re.search(excl_date_regex, line)
-        no_date = str(date_search.group(1))
+        pid_search = re.search(pid_regex, line)
+        pid = pid_search.group(1)
     except AttributeError:
-        pass
+        # probably no pid
+        pid = None
 
-    # extract this stuff piece by piece until we get to the message to make
-    # troubleshooting quirky syslog lines a bit easier
+    message_search = re.search(message_regex, line)
+    message = message_search.group(1)
 
-    # get the user
-    username_regex = re.search(extract_username_regex, no_date)
     try:
-        words[username_regex.group(1)] += 1
+        words[username] += 1
     except KeyError:
-        words[username_regex.group(1)] = 1
+        words[username] = 1
 
-    print(no_date)
-    print(words)
-
-    # get the program name
-    program_regex = re.search(extract_prog_regex, no_date)
     try:
-        words[program_regex.group(1)] += 1
+        words[program] += 1
     except KeyError:
-        words[program_regex.group(1)] = 1
+        words[program] = 1
+
+    if pid:
+        try:
+            words[pid] += 1
+        except KeyError:
+            words[pid] = 1
 
 file.close()
 
 print(words)
 
-wc = WordCloud(background_color="white",
+wc = WordCloud(background_color="black",
                width=1000,
                height=1000,
-               max_words=10,
+               max_words=100,
                relative_scaling=0.5,
                normalize_plurals=False).generate_from_frequencies(words)
 plt.imshow(wc, interpolation='bilinear')
